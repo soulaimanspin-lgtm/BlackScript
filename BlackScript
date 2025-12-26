@@ -13,7 +13,7 @@ local Player = Players.LocalPlayer
 -- كل UserId عندو Key ديالو
 local VALID_KEYS = {
 	[9221460872] = "BLACK-KEY-001", -- بدل UserId و Key
-	[] = "BLACK-KEY-002",
+	[9221990104] = "BLACK-KEY-002",
 }
 
 local KEY_ACCEPTED = false
