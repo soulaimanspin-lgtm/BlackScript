@@ -1,0 +1,436 @@
+--====================================================
+-- BLACK TEAM PANEL | AIMBOT + ESP | KEY SYSTEM FINAL
+--====================================================
+
+--================ SERVICES ==========================
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local Player = Players.LocalPlayer
+
+--================ KEY SYSTEM ========================
+-- كل UserId عندو Key ديالو
+local VALID_KEYS = {
+	[9221460872] = "BLACK-KEY-001", -- بدل UserId و Key
+	[] = "BLACK-KEY-002",
+}
+
+local KEY_ACCEPTED = false
+
+--================ CONFIG ============================
+local PANEL_OPEN = false
+local AIMBOT = false
+local SHOW_FOV = false
+local ESP = false
+local WALL_CHECK = true
+
+local FOV = 150
+local SMOOTH = 0.18
+local AIM_PART = "HumanoidRootPart"
+local MAX_ESP_DISTANCE = 3000
+
+--================ COLORS ============================
+local ORANGE = Color3.fromRGB(255,140,0)
+local DARK = Color3.fromRGB(18,18,18)
+local DARK2 = Color3.fromRGB(30,30,30)
+local GRAY = Color3.fromRGB(90,90,90)
+local WHITE = Color3.fromRGB(255,255,255)
+
+local ESP_NAME_COLOR = Color3.fromRGB(255,255,255)
+local ESP_HP_COLOR   = Color3.fromRGB(0,255,0)
+local ESP_DIST_COLOR = Color3.fromRGB(0,150,255)
+
+--================ TABLES ============================
+local Targets = {}
+local ESP_CACHE = {}
+local COMBAT_ROWS = {}
+
+--================ FOV CIRCLE ========================
+local Circle = Drawing.new("Circle")
+Circle.Color = ORANGE
+Circle.Thickness = 2
+Circle.Filled = false
+Circle.Transparency = 1
+Circle.Visible = false
+
+--================ GUI (MAIN PANEL) ==================
+local Gui = Instance.new("ScreenGui", game.CoreGui)
+Gui.ResetOnSpawn = false
+Gui.Enabled = false
+
+local Main = Instance.new("Frame", Gui)
+Main.Size = UDim2.new(0,760,0,520)
+Main.Position = UDim2.new(0.5,-380,0.5,-260)
+Main.BackgroundColor3 = DARK
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0,22)
+
+local Stroke = Instance.new("UIStroke", Main)
+Stroke.Color = ORANGE
+Stroke.Thickness = 2
+
+--================ DRAG ==============================
+do
+	local dragging, start, pos
+	Main.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			start = i.Position
+			pos = Main.Position
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+			local d = i.Position - start
+			Main.Position = pos + UDim2.fromOffset(d.X,d.Y)
+		end
+	end)
+end
+
+--================ SIDEBAR ===========================
+local Side = Instance.new("Frame", Main)
+Side.Size = UDim2.new(0,180,1,0)
+Side.BackgroundColor3 = DARK2
+Instance.new("UICorner", Side).CornerRadius = UDim.new(0,22)
+
+local function TabButton(text,y)
+	local b = Instance.new("TextButton", Side)
+	b.Size = UDim2.new(0.9,0,0,45)
+	b.Position = UDim2.new(0.05,0,0,y)
+	b.BackgroundColor3 = DARK
+	b.Text = text
+	b.TextColor3 = ORANGE
+	b.TextSize = 18
+	Instance.new("UICorner", b)
+	return b
+end
+
+local GeneralBtn = TabButton("🎛️ General",30)
+local CombatBtn  = TabButton("⚔️ Combat",90)
+local ColorBtn   = TabButton("🛠️ Soon...",150)
+
+--================ CONTENT ===========================
+local Content = Instance.new("Frame", Main)
+Content.Position = UDim2.new(0,200,0,30)
+Content.Size = UDim2.new(1,-220,1,-60)
+Content.BackgroundTransparency = 1
+
+local function NewScroll()
+	local s = Instance.new("ScrollingFrame", Content)
+	s.Size = UDim2.new(1,0,1,0)
+	s.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	s.ScrollBarImageColor3 = ORANGE
+	s.BackgroundTransparency = 1
+	local l = Instance.new("UIListLayout", s)
+	l.Padding = UDim.new(0,12)
+	return s
+end
+
+local General = NewScroll()
+local Combat  = NewScroll(); Combat.Visible = false
+local Colors  = NewScroll(); Colors.Visible = false
+
+--================ UI ELEMENTS =======================
+local function Toggle(parent,text,callback)
+	local row = Instance.new("Frame",parent)
+	row.Size = UDim2.new(1,0,0,50)
+	row.BackgroundColor3 = DARK2
+	Instance.new("UICorner",row)
+
+	local lbl = Instance.new("TextLabel",row)
+	lbl.Size = UDim2.new(0.6,0,1,0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = WHITE
+
+	local btn = Instance.new("TextButton",row)
+	btn.Size = UDim2.new(0,80,0,30)
+	btn.Position = UDim2.new(1,-90,0.5,-15)
+	btn.Text = "OFF"
+	btn.BackgroundColor3 = GRAY
+	Instance.new("UICorner",btn)
+
+	btn.MouseButton1Click:Connect(function()
+		local on = btn.Text == "OFF"
+		btn.Text = on and "ON" or "OFF"
+		btn.BackgroundColor3 = on and ORANGE or GRAY
+		callback(on)
+	end)
+end
+
+local function Slider(parent,text,min,max,default,callback)
+	local row = Instance.new("Frame",parent)
+	row.Size = UDim2.new(1,0,0,60)
+	row.BackgroundColor3 = DARK2
+	Instance.new("UICorner",row)
+
+	local lbl = Instance.new("TextLabel",row)
+	lbl.Size = UDim2.new(1,-20,0,20)
+	lbl.Position = UDim2.new(0,10,0,5)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = WHITE
+	lbl.Text = text.." : "..default
+
+	local bar = Instance.new("Frame",row)
+	bar.Size = UDim2.new(1,-20,0,8)
+	bar.Position = UDim2.new(0,10,0,35)
+	bar.BackgroundColor3 = GRAY
+	Instance.new("UICorner",bar)
+
+	local fill = Instance.new("Frame",bar)
+	fill.Size = UDim2.new((default-min)/(max-min),0,1,0)
+	fill.BackgroundColor3 = ORANGE
+	Instance.new("UICorner",fill)
+
+	bar.InputChanged:Connect(function()
+		if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+			local x = math.clamp((UIS:GetMouseLocation().X - bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+			local v = math.floor(min + (max-min)*x)
+			fill.Size = UDim2.new(x,0,1,0)
+			lbl.Text = text.." : "..v
+			callback(v)
+		end
+	end)
+end
+
+--================ GENERAL ===========================
+Toggle(General,"🎯 AimBot",function(v) AIMBOT = v end)
+Toggle(General,"⭕ FOV Circle",function(v) SHOW_FOV = v end)
+Toggle(General,"👁 ESP",function(v) ESP = v end)
+Toggle(General,"🧱 Wall Check",function(v) WALL_CHECK = v end)
+
+Slider(General,"FOV",50,400,FOV,function(v) FOV = v end)
+Slider(General,"Smooth",1,100,18,function(v) SMOOTH = v/100 end)
+
+Toggle(General,"Aim Part: Head",function(v)
+	AIM_PART = v and "Head" or "HumanoidRootPart"
+end)
+
+--================ COMBAT ============================
+local function AddPlayer(plr)
+	if plr == Player then return end
+	Targets[plr] = true
+
+	local row = Instance.new("Frame",Combat)
+	row.Size = UDim2.new(1,0,0,45)
+	row.BackgroundColor3 = DARK2
+	Instance.new("UICorner",row)
+
+	local lbl = Instance.new("TextLabel",row)
+	lbl.Size = UDim2.new(0.6,0,1,0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = "👤 "..plr.Name
+	lbl.TextColor3 = WHITE
+
+	local btn = Instance.new("TextButton",row)
+	btn.Size = UDim2.new(0,80,0,30)
+	btn.Position = UDim2.new(1,-90,0.5,-15)
+	btn.Text = "ON"
+	btn.BackgroundColor3 = ORANGE
+	Instance.new("UICorner",btn)
+
+	btn.MouseButton1Click:Connect(function()
+		Targets[plr] = not Targets[plr]
+		btn.Text = Targets[plr] and "ON" or "OFF"
+		btn.BackgroundColor3 = Targets[plr] and ORANGE or GRAY
+	end)
+
+	COMBAT_ROWS[plr] = row
+end
+
+for _,p in ipairs(Players:GetPlayers()) do AddPlayer(p) end
+Players.PlayerAdded:Connect(AddPlayer)
+Players.PlayerRemoving:Connect(function(p)
+	Targets[p] = nil
+	if COMBAT_ROWS[p] then COMBAT_ROWS[p]:Destroy() end
+	if ESP_CACHE[p] then
+		for _,d in ipairs(ESP_CACHE[p]) do d:Remove() end
+	end
+	ESP_CACHE[p] = nil
+end)
+
+--================ ESP ===============================
+local function CreateESP(plr)
+	if ESP_CACHE[plr] then return end
+	local t1,t2,t3 = Drawing.new("Text"),Drawing.new("Text"),Drawing.new("Text")
+	for _,t in ipairs({t1,t2,t3}) do
+		t.Size = 13
+		t.Center = true
+		t.Outline = true
+	end
+	ESP_CACHE[plr] = {t1,t2,t3}
+end
+
+for _,p in ipairs(Players:GetPlayers()) do
+	if p ~= Player then
+		CreateESP(p)
+		p.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			CreateESP(p)
+		end)
+	end
+end
+
+--================ WALL CHECK ========================
+local lastWallCheck = 0
+local function IsVisible(part, character)
+	if not WALL_CHECK then return true end
+	if tick() - lastWallCheck < 0.05 then return true end
+	lastWallCheck = tick()
+
+	local origin = Camera.CFrame.Position
+	local dir = part.Position - origin
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = {Player.Character, character}
+	params.IgnoreWater = true
+
+	local r = workspace:Raycast(origin, dir, params)
+	return (not r) or r.Instance:IsDescendantOf(character)
+end
+
+--================ AIMBOT ============================
+local function GetClosestTarget()
+	local closest, dist = nil, FOV
+	for plr,on in pairs(Targets) do
+		if on and plr.Character and plr.Character:FindFirstChild(AIM_PART) then
+			local part = plr.Character[AIM_PART]
+			if IsVisible(part, plr.Character) then
+				local pos,vis = Camera:WorldToViewportPoint(part.Position)
+				if vis then
+					local mag = (Vector2.new(pos.X,pos.Y) - Camera.ViewportSize/2).Magnitude
+					if mag < dist then
+						dist = mag
+						closest = part
+					end
+				end
+			end
+		end
+	end
+	return closest
+end
+
+--================ MAIN LOOP =========================
+local espTimer = 0
+RunService.RenderStepped:Connect(function(dt)
+	espTimer += dt
+	if espTimer < 0.03 then return end
+	espTimer = 0
+
+	Circle.Position = Camera.ViewportSize/2
+	Circle.Radius = FOV
+	Circle.Visible = SHOW_FOV
+
+	for plr,objs in pairs(ESP_CACHE) do
+		for _,o in ipairs(objs) do o.Visible = false end
+		if ESP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = plr.Character.HumanoidRootPart
+			local hum = plr.Character:FindFirstChild("Humanoid")
+			if hum then
+				local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+				if dist <= MAX_ESP_DISTANCE then
+					local pos,vis = Camera:WorldToViewportPoint(hrp.Position)
+					if vis then
+						objs[1].Text = plr.Name
+						objs[1].Color = ESP_NAME_COLOR
+						objs[1].Position = Vector2.new(pos.X,pos.Y-25)
+
+						objs[2].Text = "HP: "..math.floor(hum.Health)
+						objs[2].Color = ESP_HP_COLOR
+						objs[2].Position = Vector2.new(pos.X,pos.Y-10)
+
+						objs[3].Text = math.floor(dist).."m"
+						objs[3].Color = ESP_DIST_COLOR
+						objs[3].Position = Vector2.new(pos.X,pos.Y+8)
+
+						for _,o in ipairs(objs) do o.Visible = true end
+					end
+				end
+			end
+		end
+	end
+
+	if AIMBOT then
+		local t = GetClosestTarget()
+		if t then
+			Camera.CFrame = Camera.CFrame:Lerp(
+				CFrame.lookAt(Camera.CFrame.Position, t.Position),
+				math.clamp(SMOOTH,0.05,0.5)
+			)
+		end
+	end
+end)
+
+--================ PANEL TOGGLE ======================
+UIS.InputBegan:Connect(function(i,gp)
+	if gp then return end
+	if i.KeyCode == Enum.KeyCode.G and KEY_ACCEPTED then
+		PANEL_OPEN = not PANEL_OPEN
+		Gui.Enabled = PANEL_OPEN
+	end
+end)
+
+--================ TABS ==============================
+GeneralBtn.MouseButton1Click:Connect(function()
+	General.Visible=true; Combat.Visible=false; Colors.Visible=false
+end)
+CombatBtn.MouseButton1Click:Connect(function()
+	General.Visible=false; Combat.Visible=true; Colors.Visible=false
+end)
+ColorBtn.MouseButton1Click:Connect(function()
+	General.Visible=false; Combat.Visible=false; Colors.Visible=true
+end)
+
+--================ KEY UI ============================
+local KeyGui = Instance.new("ScreenGui", game.CoreGui)
+KeyGui.ResetOnSpawn = false
+
+local KeyFrame = Instance.new("Frame", KeyGui)
+KeyFrame.Size = UDim2.new(0,360,0,180)
+KeyFrame.Position = UDim2.new(0.5,-180,0.5,-90)
+KeyFrame.BackgroundColor3 = DARK
+Instance.new("UICorner", KeyFrame).CornerRadius = UDim.new(0,18)
+
+local Title = Instance.new("TextLabel", KeyFrame)
+Title.Size = UDim2.new(1,0,0,40)
+Title.BackgroundTransparency = 1
+Title.Text = "🔐 ENTER YOUR KEY"
+Title.TextColor3 = ORANGE
+Title.TextSize = 20
+
+local Box = Instance.new("TextBox", KeyFrame)
+Box.Size = UDim2.new(0.85,0,0,40)
+Box.Position = UDim2.new(0.075,0,0,60)
+Box.PlaceholderText = "Enter Key Here"
+Box.Text = ""
+Box.BackgroundColor3 = DARK2
+Box.TextColor3 = WHITE
+Instance.new("UICorner", Box)
+
+local Btn = Instance.new("TextButton", KeyFrame)
+Btn.Size = UDim2.new(0.5,0,0,40)
+Btn.Position = UDim2.new(0.25,0,0,115)
+Btn.Text = "UNLOCK"
+Btn.BackgroundColor3 = ORANGE
+Btn.TextColor3 = WHITE
+Instance.new("UICorner", Btn)
+
+Btn.MouseButton1Click:Connect(function()
+	local userKey = VALID_KEYS[Player.UserId]
+	if userKey and Box.Text == userKey then
+		KEY_ACCEPTED = true
+		KeyGui:Destroy()
+		Gui.Enabled = true
+		PANEL_OPEN = true
+	else
+		Btn.Text = "❌ WRONG KEY"
+		Btn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+		task.wait(1)
+		Btn.Text = "UNLOCK"
+		Btn.BackgroundColor3 = ORANGE
+	end
+end)
